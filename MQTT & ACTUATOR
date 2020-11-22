@@ -1,0 +1,122 @@
+#include <SPI.h>
+#include <PubSubClient.h>
+#include <WiFi.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+#include <ESP32Servo.h>
+
+DHT dht(32,DHT11);
+Servo servo;
+
+
+const char* ssid = "ETHELEVOELLEN";
+const char* password = "evoellen";
+String temp_str;
+char temp[50];
+int pinServo=33;
+
+
+byte mac[] = { 0x2C, 0xFD, 0xA1, 0xB0, 0x34, 0x6B};
+IPAddress ip(192, 168, 100, 4);
+ 
+const char* server = "broker.hivemq.com";
+ 
+// Ethernet and MQTT related objects
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!mqttClient.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (mqttClient.connect("Cygni")) {
+      Serial.println("connected");
+      mqttClient.publish("ProjectIoT", "Connected Again");
+      mqttClient.subscribe("ProjectIoT");
+    } else {
+      Serial.print("Gagal untuk connect, RC = ");
+      Serial.print(mqttClient.state());
+      Serial.println(" coba 5 detik lagi");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+
+void connectWiFi(){
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print("Connecting to WiFi..\n");
+  }
+  Serial.println("Connected to the WiFi network"); 
+}
+
+void connectMqtt(){
+  mqttClient.setServer(server, 1883);   
+ 
+  if (mqttClient.connect("myClientID")) 
+  {
+    Serial.println("Koneksi ke server berhasil");
+  } 
+  else 
+  {
+    Serial.println("Koneksi ne gagal");
+  }
+}
+
+
+void setup()
+{
+  Serial.begin(9600);
+  WiFi.begin(ssid, password);
+  mqttClient.setCallback(callback);
+  connectWiFi();                                    
+  connectMqtt();
+  dht.begin();
+  servo.attach(pinServo);
+}
+
+void loop()
+{
+  if (!mqttClient.connected()) {
+    reconnect();
+  }
+  mqttClient.loop();
+  float t = dht.readTemperature();
+  if (isnan(t)) {
+    Serial.println("Sensor Undetectable");
+    servo.write(0);
+    delay(2000);
+    return;
+  }
+
+  if(t>32.00){
+    servo.write(90);
+  }else if(t<32.00){
+    servo.write(180);
+  }
+  
+  temp_str =String(t);
+  temp_str.toCharArray(temp, temp_str.length()+ 1);
+  mqttClient.publish("ProjectIoT", temp);
+  delay(5000);
+}
+
+void callback(char* topic, byte* payload, unsigned int length)
+{
+  // Print the topic
+  Serial.print("Topic: ");
+  Serial.println(topic);
+ 
+  // Print the message
+  Serial.print("Message: ");
+  for(int i = 0; i < length; i ++)
+  {
+    Serial.print(char(payload[i]));
+  }
+ 
+  // Print a newline
+  Serial.println("");
+}
